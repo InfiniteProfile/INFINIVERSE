@@ -1,0 +1,16 @@
+import test from 'node:test';import assert from 'node:assert/strict';
+import {universe,galaxy,planet,profile,page,chain,parseUrl,parseId,href,get,MAX_INDEX} from '../js/gen.js';
+import {search,norm,score} from '../js/search.js';
+test('deterministic generation',()=>{assert.deepEqual(universe(42),universe(42));assert.deepEqual(profile(1,2,3,4),profile(1,2,3,4));assert.notEqual(universe(1).name+universe(1).hue,universe(2).name+universe(2).hue)});
+test('parent scoping & ids',()=>{const p=profile(5,6,7,8);assert.equal(p.id,'U5-G6-P7-F8');assert.deepEqual(p.path,[5,6,7,8]);assert.equal(chain(p.path).length,4)});
+test('no duplicate ids across pages / no overlap',()=>{const a=page([3,1],0,12),b=page([3,1],a.next,12);const ids=[...a.items,...b.items].map(e=>e.id);assert.equal(new Set(ids).size,24);assert.ok(b.items.every(e=>e.path.slice(0,2).join()==='3,1'))});
+test('limits & invalid',()=>{assert.equal(universe(-1),null);assert.equal(universe(MAX_INDEX+1),null);assert.equal(get([1.5]),null);assert.equal(page([1],MAX_INDEX-1,5).next,null)});
+test('url parsing round-trip',()=>{const e=profile(9,8,7,6);assert.deepEqual(parseUrl(href(e)),e.path);assert.equal(parseUrl('/u/abc'),null);assert.equal(parseUrl('/u/1/p/2'),null);assert.deepEqual(parseUrl('/u/1/g/2/'),[1,2])});
+test('id resolution',()=>{assert.deepEqual(parseId(' u7-g3-p2-f5 '),[7,3,2,5]);assert.equal(parseId('U7-P2'),null)});
+test('normalisation',()=>{assert.equal(norm('  ÀUR  Ion '),'aur ion')});
+test('search ranks exact over partial and finds beyond visible',async()=>{const t=profile(2,3,4,5),r=await search(t.name);assert.equal(r[0].id,t.id);assert.equal(r[0].name,t.name);
+const far=universe(250),r2=await search(far.name);assert.ok(r2.some(x=>x.id===far.id));
+const byUser=await search('@'.slice(1)+t.username);assert.ok(byUser.some(x=>x.id===t.id))});
+test('search by ID outside scan scope',async()=>{const r=await search('U123456-G9-P8-F7');assert.equal(r[0].id,'U123456-G9-P8-F7')});
+test('empty/malformed queries',async()=>{assert.deepEqual(await search('   '),[]);assert.deepEqual(await search('zzzzqqqq<script>'),[])});
+test('cancellation',async()=>{const c=new AbortController();const p=search('a',{signal:c.signal});c.abort();await assert.rejects(p,{name:'AbortError'})});
